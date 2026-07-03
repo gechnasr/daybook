@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Daybook</title>
+</head>
+<body>
+<div id="daybook-root"></div>
+<style>
+  :root {
+    --ink: #F2EFE7;
+    --ink-dim: #A9B0C2;
+    --navy-0: #0F1626;
+    --navy-1: #182140;
+    --navy-2: #212C52;
+    --gold: #E3A73F;
+    --coral: #E1656F;
+    --mint: #6FBE95;
+    --rule: rgba(242,239,231,0.10);
+  }
+  html, body { margin: 0; padding: 0; background: var(--navy-0); }
+  #daybook-root {
+    font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--navy-0);
+    color: var(--ink);
+    min-height: 100vh;
+    box-sizing: border-box;
+  }
+  #daybook-root * { box-sizing: border-box; }
+  .db-wrap { max-width: 720px; margin: 0 auto; padding: 36px 22px 60px; }
+  .db-header {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    border-bottom: 1px solid var(--rule); padding-bottom: 18px; margin-bottom: 20px;
+  }
+  .db-title {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 34px; font-weight: 600; font-style: italic;
+    margin: 0; color: var(--ink);
+  }
+  .db-date { font-size: 12px; color: var(--ink-dim); text-transform: uppercase; letter-spacing: 1.5px; }
+  .db-status { font-size: 11px; color: var(--ink-dim); margin-bottom: 16px; min-height: 14px; }
+  .db-status.err { color: var(--coral); }
+  .db-status.ok { color: var(--mint); }
+
+  .db-add { display: flex; gap: 8px; margin-bottom: 30px; flex-wrap: wrap; }
+  .db-add input[type="text"] {
+    flex: 1 1 220px; background: var(--navy-1); border: 1px solid var(--rule);
+    color: var(--ink); padding: 11px 13px; border-radius: 3px; font-family: inherit; font-size: 14px; outline: none;
+  }
+  .db-add input[type="text"]::placeholder { color: var(--ink-dim); }
+  .db-add input[type="text"]:focus { border-color: var(--gold); }
+  .db-add input[type="date"], .db-add input[type="time"] {
+    background: var(--navy-1); border: 1px solid var(--rule); color: var(--ink);
+    padding: 11px 10px; border-radius: 3px; font-family: inherit; font-size: 13px; outline: none; color-scheme: dark;
+  }
+  .db-add input[type="date"]:focus, .db-add input[type="time"]:focus { border-color: var(--gold); }
+  .db-add select {
+    background: var(--navy-1); border: 1px solid var(--rule); color: var(--ink);
+    padding: 11px 10px; border-radius: 3px; font-family: inherit; font-size: 13px; outline: none;
+  }
+  .db-add select:focus { border-color: var(--gold); }
+  .db-add button {
+    background: var(--gold); color: var(--navy-0); border: none; padding: 11px 18px;
+    border-radius: 3px; font-family: inherit; font-weight: 700; font-size: 13px;
+    letter-spacing: 0.4px; cursor: pointer; text-transform: uppercase;
+  }
+  .db-add button:hover { background: #f0b657; }
+
+  .db-filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 22px; }
+  .db-filter-btn {
+    background: var(--navy-1); border: 1px solid var(--rule); color: var(--ink-dim);
+    padding: 6px 12px; border-radius: 14px; font-family: inherit; font-size: 12px; cursor: pointer;
+  }
+  .db-filter-btn.active { background: var(--gold); color: var(--navy-0); border-color: var(--gold); font-weight: 700; }
+
+  .db-tag {
+    display: inline-block; font-size: 10.5px; color: var(--ink-dim); border: 1px solid var(--rule);
+    padding: 1px 7px; border-radius: 10px; margin-left: 8px; letter-spacing: 0.3px; vertical-align: middle;
+  }
+  .db-subcount { font-size: 11px; color: var(--ink-dim); margin-left: 6px; }
+
+  .db-subtasks { margin: 0 0 8px 28px; padding-left: 12px; border-left: 1px solid var(--rule); }
+  .db-subrow { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
+  .db-subcheck {
+    flex: 0 0 auto; width: 14px; height: 14px; border-radius: 3px; border: 1.5px solid var(--ink-dim);
+    background: transparent; cursor: pointer; display:flex; align-items:center; justify-content:center;
+    color: var(--navy-0); font-size: 10px;
+  }
+  .db-subrow.done .db-subcheck { background: var(--mint); border-color: var(--mint); }
+  .db-subtext { flex: 1 1 auto; font-size: 13px; color: var(--ink); }
+  .db-subrow.done .db-subtext { color: var(--ink-dim); text-decoration: line-through; text-decoration-color: var(--ink-dim); }
+  .db-subdel {
+    background: none; border: none; color: var(--ink-dim); cursor: pointer; font-size: 12px; padding: 2px 4px; opacity: 0.4;
+  }
+  .db-subrow:hover .db-subdel { opacity: 1; }
+  .db-subdel:hover { color: var(--coral); }
+  .db-subadd { display: flex; gap: 6px; padding: 6px 0 4px; }
+  .db-subadd input[type="text"] {
+    flex: 1 1 auto; background: var(--navy-1); border: 1px solid var(--rule); color: var(--ink);
+    padding: 6px 9px; border-radius: 3px; font-family: inherit; font-size: 12.5px; outline: none;
+  }
+  .db-subadd input[type="text"]:focus { border-color: var(--gold); }
+  .db-subadd button {
+    background: none; border: 1px solid var(--rule); color: var(--ink-dim); padding: 6px 10px;
+    border-radius: 3px; font-size: 12px; cursor: pointer;
+  }
+  .db-subadd button:hover { color: var(--gold); border-color: var(--gold); }
+
+  .db-section-label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: var(--ink-dim); margin: 24px 0 10px;
+  }
+  .db-group-label {
+    font-size: 12px; color: var(--gold); margin: 16px 0 6px; letter-spacing: 0.4px;
+  }
+  .db-group-label:first-child { margin-top: 0; }
+
+  .db-timeline { position: relative; padding-left: 26px; }
+  .db-timeline::before { content:""; position:absolute; left:6px; top:6px; bottom:6px; width:1px; background: var(--rule); }
+  .db-row { position: relative; display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--rule); }
+  .db-row:last-child { border-bottom: none; }
+  .db-timeline-row::before {
+    content:""; position:absolute; left:-26px; top:18px; width:7px; height:7px; border-radius:50%;
+    background: var(--gold); border: 2px solid var(--navy-0);
+  }
+  .db-row.done.db-timeline-row::before { background: var(--mint); }
+
+  .db-check {
+    flex: 0 0 auto; width: 18px; height: 18px; border-radius: 4px; border: 1.5px solid var(--ink-dim);
+    background: transparent; cursor: pointer; margin-top: 2px; display:flex; align-items:center; justify-content:center;
+    color: var(--navy-0); font-size: 12px;
+  }
+  .db-row.done .db-check { background: var(--mint); border-color: var(--mint); }
+  .db-time { flex: 0 0 52px; font-size: 12px; color: var(--gold); padding-top: 2px; }
+  .db-row.done .db-time { color: var(--ink-dim); }
+  .db-text { flex: 1 1 auto; font-size: 14.5px; line-height: 1.4; padding-top: 1px; word-break: break-word; }
+  .db-row.done .db-text { color: var(--ink-dim); text-decoration: line-through; text-decoration-color: var(--ink-dim); }
+
+  .db-row-actions { flex: 0 0 auto; display: flex; gap: 2px; opacity: 0.45; transition: opacity 0.15s; }
+  .db-row:hover .db-row-actions { opacity: 1; }
+  .db-edit, .db-del, .db-sub-toggle {
+    background: none; border: none; color: var(--ink-dim); cursor: pointer; font-size: 13px; padding: 2px 5px;
+  }
+  .db-edit:hover { color: var(--gold); }
+  .db-del:hover { color: var(--coral); }
+  .db-sub-toggle:hover { color: var(--mint); }
+  .db-sub-toggle.active { color: var(--mint); opacity: 1; }
+
+  .db-empty { color: var(--ink-dim); font-size: 13px; font-style: italic; padding: 14px 0; font-family: Georgia, serif; }
+  .db-footer { margin-top: 34px; font-size: 11px; color: var(--ink-dim); text-align: center; letter-spacing: 0.5px; }
+
+  .db-edit-panel {
+    background: var(--navy-1); border: 1px solid var(--rule); border-radius: 5px;
+    padding: 12px; margin: 4px 0 10px 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  }
+  .db-edit-panel input[type="text"] {
+    flex: 1 1 100%; background: var(--navy-0); border: 1px solid var(--rule); color: var(--ink);
+    padding: 9px 11px; border-radius: 3px; font-family: inherit; font-size: 13.5px; outline: none;
+  }
+  .db-edit-panel input[type="date"], .db-edit-panel input[type="time"] {
+    background: var(--navy-0); border: 1px solid var(--rule); color: var(--ink);
+    padding: 8px 9px; border-radius: 3px; font-family: inherit; font-size: 12.5px; outline: none; color-scheme: dark;
+  }
+  .db-edit-panel .db-clear-date {
+    background: none; border: 1px solid var(--rule); color: var(--ink-dim); padding: 8px 10px;
+    border-radius: 3px; font-size: 11px; cursor: pointer;
+  }
+  .db-edit-panel .db-save-edit {
+    background: var(--gold); color: var(--navy-0); border: none; padding: 8px 14px;
+    border-radius: 3px; font-weight: 700; font-size: 12px; cursor: pointer; text-transform: uppercase;
+  }
+  .db-edit-panel .db-cancel-edit {
+    background: none; border: none; color: var(--ink-dim); padding: 8px 6px; font-size: 12px; cursor: pointer;
+  }
+
+  .db-setup {
+    max-width: 520px; margin: 60px auto; padding: 30px; background: var(--navy-1);
+    border: 1px solid var(--rule); border-radius: 6px; text-align: left;
+  }
+  .db-setup h2 { font-family: Georgia, serif; font-style: italic; margin-top: 0; }
+  .db-setup p { font-size: 13px; color: var(--ink-dim); line-height: 1.6; }
+  .db-setup code { background: var(--navy-0); padding: 2px 6px; border-radius: 3px; font-size: 12px; }
+  .db-setup input {
+    width: 100%; background: var(--navy-0); border: 1px solid var(--rule); color: var(--ink);
+    padding: 10px 12px; border-radius: 4px; font-family: inherit; font-size: 13px; margin: 10px 0; outline: none;
+  }
+  .db-setup button {
+    background: var(--gold); color: var(--navy-0); border: none; padding: 10px 18px;
+    border-radius: 4px; font-weight: 700; font-size: 13px; cursor: pointer; text-transform: uppercase;
+  }
+</style>
+<script>
+(function() {
+  var root = document.getElementById('daybook-root');
+  var LOCAL_KEY = 'daybook_apps_script_url';
+  var apiUrl = localStorage.getItem(LOCAL_KEY) || '';
+  var tasks = [];
+  var loaded = false;
+  var editingId = null;
+  var addingSubtaskId = null;
+  var activeFilter = 'All';
+  var COMPANIES = ['ESC', 'Hadeed', 'META'];
+
+  function todayStr() { return new Date().toISOString().slice(0,10); }
+  function fmtDateHeader() {
+    return new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  }
+  function uid() { return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+  function fmtTime(t) {
+    if (!t) return '';
+    var parts = t.split(':').map(Number);
+    var h = parts[0], m = parts[1];
+    var period = h >= 12 ? 'PM' : 'AM';
+    var h12 = h % 12; if (h12 === 0) h12 = 12;
+    return h12 + ':' + String(m).padStart(2,'0') + ' ' + period;
+  }
+  function fmtGroupDate(dateStr) {
+    var today = todayStr();
+    var d = new Date(dateStr + 'T00:00:00');
+    var t = new Date(today + 'T00:00:00');
+    var diffDays = Math.round((d - t) / 86400000);
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Tomorrow';
+    if (diffDays === -1) return 'Yesterday';
+    if (diffDays < 0) return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + ' (overdue)';
+    return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  }
+  function companyOptionsHtml(selected) {
+    var html = '<option value=""' + (!selected ? ' selected' : '') + '>No company</option>';
+    COMPANIES.forEach(function(c) {
+      html += '<option value="' + c + '"' + (selected === c ? ' selected' : '') + '>' + c + '</option>';
+    });
+    return html;
+  }
+  function escapeHtml(s) {
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function setStatus(msg, kind) {
+    var el = root.querySelector('.db-status');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'db-status' + (kind ? ' ' + kind : '');
+  }
+
+  function renderSetup() {
+    root.innerHTML =
+      '<div class="db-setup">' +
+        '<h2>Set up Daybook</h2>' +
+        '<p>Paste the Google Apps Script Web App URL you deployed (it ends in <code>/exec</code>). ' +
+        'This is saved only in this browser, so you\'ll enter it once per device.</p>' +
+        '<input type="text" id="db-url-input" placeholder="https://script.google.com/macros/s/.../exec" />' +
+        '<button id="db-url-save">Save & continue</button>' +
+      '</div>';
+    root.querySelector('#db-url-save').addEventListener('click', function() {
+      var val = root.querySelector('#db-url-input').value.trim();
+      if (!val) return;
+      apiUrl = val;
+      localStorage.setItem(LOCAL_KEY, apiUrl);
+      loadTasks();
+    });
+  }
+
+  function apiLoad() {
+    return fetch(apiUrl, { method: 'GET' }).then(function(r) { return r.json(); });
+  }
+  function apiSave(data) {
+    return fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(data)
+    }).then(function(r) { return r.json(); });
+  }
+
+  function loadTasks() {
+    if (!apiUrl) { renderSetup(); return; }
+    loaded = false;
+    render();
+    apiLoad().then(function(data) {
+      tasks = Array.isArray(data) ? data : [];
+      loaded = true;
+      render();
+    }).catch(function() {
+      loaded = true;
+      render();
+      setStatus('Could not reach your Sheet — check the URL or your connection.', 'err');
+    });
+  }
+
+  function saveTasks() {
+    setStatus('Saving…');
+    apiSave(tasks).then(function() {
+      setStatus('Saved', 'ok');
+      setTimeout(function() { setStatus(''); }, 1200);
+    }).catch(function() {
+      setStatus('Save failed — check your connection.', 'err');
+    });
+  }
+
+  function addTask(text, date, time, company) {
+    text = text.trim();
+    if (!text) return;
+    tasks.push({ id: uid(), text: text, date: date || null, time: time || null, company: company || null, done: false, created: Date.now() });
+    saveTasks();
+    render();
+  }
+  function toggleTask(id) {
+    var t = tasks.filter(function(x){ return x.id === id; })[0];
+    if (t) { t.done = !t.done; saveTasks(); render(); }
+  }
+  function deleteTask(id) {
+    tasks = tasks.filter(function(x){ return x.id !== id; });
+    saveTasks();
+    render();
+  }
+  function addSubtask(taskId, text) {
+    text = text.trim();
+    if (!text) return;
+    var t = tasks.filter(function(x){ return x.id === taskId; })[0];
+    if (!t) return;
+    if (!t.subtasks) t.subtasks = [];
+    t.subtasks.push({ id: uid(), text: text, done: false });
+    saveTasks();
+    render();
+  }
+  function toggleSubtask(taskId, subId) {
+    var t = tasks.filter(function(x){ return x.id === taskId; })[0];
+    if (!t || !t.subtasks) return;
+    var s = t.subtasks.filter(function(x){ return x.id === subId; })[0];
+    if (s) { s.done = !s.done; saveTasks(); render(); }
+  }
+  function deleteSubtask(taskId, subId) {
+    var t = tasks.filter(function(x){ return x.id === taskId; })[0];
+    if (!t || !t.subtasks) return;
+    t.subtasks = t.subtasks.filter(function(x){ return x.id !== subId; });
+    saveTasks();
+    render();
+  }
+  function updateTask(id, text, date, time, company) {
+    var t = tasks.filter(function(x){ return x.id === id; })[0];
+    if (!t) return;
+    t.text = text.trim() || t.text;
+    t.date = date || null;
+    t.time = time || null;
+    t.company = company || null;
+    editingId = null;
+    saveTasks();
+    render();
+  }
+
+  function editPanelHtml(t) {
+    return '' +
+      '<div class="db-edit-panel" data-task-id="' + t.id + '">' +
+        '<input type="text" class="db-edit-text" value="' + escapeHtml(t.text) + '" />' +
+        '<input type="date" class="db-edit-date" value="' + (t.date || '') + '" />' +
+        '<input type="time" class="db-edit-time" value="' + (t.time || '') + '" />' +
+        '<select class="db-edit-company">' + companyOptionsHtml(t.company) + '</select>' +
+        '<button class="db-clear-date" data-action="clear-date">Clear date</button>' +
+        '<button class="db-save-edit" data-action="save-edit">Save</button>' +
+        '<button class="db-cancel-edit" data-action="cancel-edit">Cancel</button>' +
+      '</div>';
+  }
+
+  function subtasksHtml(t) {
+    var subs = t.subtasks || [];
+    var rows = subs.map(function(s) {
+      return '' +
+        '<div class="db-subrow ' + (s.done ? 'done' : '') + '" data-subid="' + s.id + '">' +
+          '<button class="db-subcheck" data-action="sub-toggle">' + (s.done ? '✓' : '') + '</button>' +
+          '<div class="db-subtext">' + escapeHtml(s.text) + '</div>' +
+          '<button class="db-subdel" data-action="sub-delete" title="Remove">✕</button>' +
+        '</div>';
+    }).join('');
+    if (!subs.length && addingSubtaskId !== t.id) return '';
+    var addForm = addingSubtaskId === t.id
+      ? '<form class="db-subadd" data-action="sub-add-form">' +
+          '<input type="text" class="db-subadd-input" placeholder="Add subtask…" autocomplete="off" autofocus />' +
+          '<button type="submit">+</button>' +
+        '</form>'
+      : '';
+    return '' +
+      '<div class="db-subtasks" data-task-id="' + t.id + '">' +
+        rows +
+        addForm +
+      '</div>';
+  }
+
+  function rowHtml(t, showTime, timelineRow) {
+    var subs = t.subtasks || [];
+    var subCount = subs.length ? ' <span class="db-subcount">(' + subs.filter(function(s){return s.done;}).length + '/' + subs.length + ')</span>' : '';
+    var body =
+      '<div class="db-row ' + (t.done ? 'done ' : '') + (timelineRow ? 'db-timeline-row' : '') + '" data-id="' + t.id + '">' +
+        '<button class="db-check" data-action="toggle">' + (t.done ? '✓' : '') + '</button>' +
+        (showTime ? '<div class="db-time">' + (t.time ? fmtTime(t.time) : '') + '</div>' : '') +
+        '<div class="db-text">' + escapeHtml(t.text) + (t.company ? '<span class="db-tag">' + t.company + '</span>' : '') + subCount + '</div>' +
+        '<div class="db-row-actions">' +
+          '<button class="db-sub-toggle' + (addingSubtaskId === t.id ? ' active' : '') + '" data-action="sub-add-toggle" title="Add subtask">' + (addingSubtaskId === t.id ? '×' : '+') + '</button>' +
+          '<button class="db-edit" data-action="edit" title="Edit">✎</button>' +
+          '<button class="db-del" data-action="delete" title="Remove">✕</button>' +
+        '</div>' +
+      '</div>';
+    body += subtasksHtml(t);
+    if (editingId === t.id) {
+      body += editPanelHtml(t);
+    }
+    return body;
+  }
+
+  function render() {
+    if (!loaded) {
+      root.innerHTML = '<div class="db-wrap"><p class="db-empty">Opening the daybook…</p></div>';
+      return;
+    }
+    var today = todayStr();
+    var visible = tasks.filter(function(t) {
+      if (activeFilter === 'All') return true;
+      if (activeFilter === 'General') return !t.company;
+      return t.company === activeFilter;
+    });
+    var scheduledTasks = visible.filter(function(t){ return t.date; });
+    var inbox = visible.filter(function(t){ return !t.date; }).sort(function(a,b){ return a.created - b.created; });
+
+    // group scheduled by date, sorted chronologically; each group sorted by time then created
+    var groups = {};
+    scheduledTasks.forEach(function(t) {
+      if (!groups[t.date]) groups[t.date] = [];
+      groups[t.date].push(t);
+    });
+    var dateKeys = Object.keys(groups).sort();
+    dateKeys.forEach(function(k) {
+      groups[k].sort(function(a,b) {
+        if (a.time && b.time) return a.time.localeCompare(b.time);
+        if (a.time) return -1;
+        if (b.time) return 1;
+        return a.created - b.created;
+      });
+    });
+
+    var scheduledHtml = '';
+    if (dateKeys.length === 0) {
+      scheduledHtml = '<p class="db-empty">Nothing scheduled yet.</p>';
+    } else {
+      dateKeys.forEach(function(k) {
+        scheduledHtml += '<div class="db-group-label">' + fmtGroupDate(k) + '</div>';
+        scheduledHtml += '<div class="db-timeline">' +
+          groups[k].map(function(t){ return rowHtml(t, true, true); }).join('') +
+        '</div>';
+      });
+    }
+
+    var inboxHtml = inbox.length
+      ? inbox.map(function(t){ return rowHtml(t, false, false); }).join('')
+      : '<p class="db-empty">Inbox is clear.</p>';
+
+    var doneToday = tasks.filter(function(t){ return t.date === today && t.done; }).length;
+    var totalToday = tasks.filter(function(t){ return t.date === today; }).length;
+
+    root.innerHTML =
+      '<div class="db-wrap">' +
+        '<div class="db-header">' +
+          '<h1 class="db-title">Daybook</h1>' +
+          '<div class="db-date">' + fmtDateHeader() + '</div>' +
+        '</div>' +
+        '<div class="db-status"></div>' +
+        '<form class="db-add" id="db-add-form">' +
+          '<input type="text" id="db-add-text" placeholder="Add a task…" autocomplete="off" />' +
+          '<input type="date" id="db-add-date" />' +
+          '<input type="time" id="db-add-time" />' +
+          '<select id="db-add-company">' + companyOptionsHtml(null) + '</select>' +
+          '<button type="submit">Add</button>' +
+        '</form>' +
+        '<div class="db-filters">' +
+          ['All', 'General'].concat(COMPANIES).map(function(f) {
+            return '<button class="db-filter-btn' + (activeFilter === f ? ' active' : '') + '" data-filter="' + f + '">' + f + '</button>';
+          }).join('') +
+        '</div>' +
+        '<div class="db-section-label">Scheduled</div>' +
+        scheduledHtml +
+        '<div class="db-section-label">Inbox — no date assigned</div>' +
+        inboxHtml +
+        '<div class="db-footer">' + doneToday + ' of ' + totalToday + ' done today</div>' +
+      '</div>';
+
+    root.querySelector('#db-add-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var textEl = root.querySelector('#db-add-text');
+      var dateEl = root.querySelector('#db-add-date');
+      var timeEl = root.querySelector('#db-add-time');
+      var companyEl = root.querySelector('#db-add-company');
+      addTask(textEl.value, dateEl.value, timeEl.value, companyEl.value);
+      textEl.value = ''; dateEl.value = ''; timeEl.value = ''; companyEl.value = ''; textEl.focus();
+    });
+
+    root.querySelectorAll('[data-filter]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        activeFilter = btn.dataset.filter;
+        render();
+      });
+    });
+
+    root.querySelectorAll('[data-action="toggle"]').forEach(function(btn) {
+      btn.addEventListener('click', function() { toggleTask(btn.closest('.db-row').dataset.id); });
+    });
+    root.querySelectorAll('[data-action="delete"]').forEach(function(btn) {
+      btn.addEventListener('click', function() { deleteTask(btn.closest('.db-row').dataset.id); });
+    });
+    root.querySelectorAll('[data-action="edit"]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        editingId = btn.closest('.db-row').dataset.id;
+        render();
+      });
+    });
+    root.querySelectorAll('[data-action="cancel-edit"]').forEach(function(btn) {
+      btn.addEventListener('click', function() { editingId = null; render(); });
+    });
+    root.querySelectorAll('[data-action="clear-date"]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var panel = btn.closest('.db-edit-panel');
+        panel.querySelector('.db-edit-date').value = '';
+        panel.querySelector('.db-edit-time').value = '';
+      });
+    });
+    root.querySelectorAll('[data-action="save-edit"]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var panel = btn.closest('.db-edit-panel');
+        var id = panel.dataset.taskId;
+        var text = panel.querySelector('.db-edit-text').value;
+        var date = panel.querySelector('.db-edit-date').value;
+        var time = panel.querySelector('.db-edit-time').value;
+        var company = panel.querySelector('.db-edit-company').value;
+        updateTask(id, text, date, time, company);
+      });
+    });
+
+    root.querySelectorAll('[data-action="sub-add-toggle"]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var id = btn.closest('.db-row').dataset.id;
+        addingSubtaskId = (addingSubtaskId === id) ? null : id;
+        render();
+      });
+    });
+    root.querySelectorAll('[data-action="sub-toggle"]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var subrow = btn.closest('.db-subrow');
+        var container = btn.closest('.db-subtasks');
+        toggleSubtask(container.dataset.taskId, subrow.dataset.subid);
+      });
+    });
+    root.querySelectorAll('[data-action="sub-delete"]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var subrow = btn.closest('.db-subrow');
+        var container = btn.closest('.db-subtasks');
+        deleteSubtask(container.dataset.taskId, subrow.dataset.subid);
+      });
+    });
+    root.querySelectorAll('[data-action="sub-add-form"]').forEach(function(form) {
+      form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        var input = form.querySelector('.db-subadd-input');
+        var container = form.closest('.db-subtasks');
+        addSubtask(container.dataset.taskId, input.value);
+      });
+    });
+  }
+
+  loadTasks();
+})();
+</script>
+</body>
+</html>
