@@ -39,6 +39,17 @@
     margin: 0; color: var(--ink);
   }
   .db-date { font-size: 12px; color: var(--ink-dim); text-transform: uppercase; letter-spacing: 1.5px; }
+  .db-header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .db-history-link {
+    background: none; border: 1px solid var(--rule); color: var(--ink-dim); font-family: inherit;
+    font-size: 10.5px; padding: 4px 10px; border-radius: 12px; cursor: pointer; letter-spacing: 0.3px;
+  }
+  .db-history-link:hover { color: var(--gold); border-color: var(--gold); }
+  .db-back-link {
+    background: none; border: none; color: var(--ink-dim); font-family: inherit; font-size: 12px;
+    cursor: pointer; padding: 0; margin-bottom: 18px; letter-spacing: 0.3px;
+  }
+  .db-back-link:hover { color: var(--gold); }
   .db-status { font-size: 11px; color: var(--ink-dim); margin-bottom: 16px; min-height: 14px; }
   .db-status.err { color: var(--coral); }
   .db-status.ok { color: var(--mint); }
@@ -95,6 +106,21 @@
   }
   .db-subrow:hover .db-subdel { opacity: 1; }
   .db-subdel:hover { color: var(--coral); }
+  .db-subedit-btn {
+    background: none; border: none; color: var(--ink-dim); cursor: pointer; font-size: 11.5px; padding: 2px 4px; opacity: 0.4;
+  }
+  .db-subrow:hover .db-subedit-btn { opacity: 1; }
+  .db-subedit-btn:hover { color: var(--gold); }
+  .db-subedit { gap: 6px; }
+  .db-subedit-input {
+    flex: 1 1 auto; background: var(--navy-0); border: 1px solid var(--gold); color: var(--ink);
+    padding: 5px 8px; border-radius: 3px; font-family: inherit; font-size: 13px; outline: none;
+  }
+  .db-subedit-save, .db-subedit-cancel {
+    background: none; border: none; cursor: pointer; font-size: 12px; padding: 2px 5px;
+  }
+  .db-subedit-save { color: var(--mint); }
+  .db-subedit-cancel { color: var(--ink-dim); }
   .db-subadd { display: flex; gap: 6px; padding: 6px 0 4px; }
   .db-subadd input[type="text"] {
     flex: 1 1 auto; background: var(--navy-1); border: 1px solid var(--rule); color: var(--ink);
@@ -198,10 +224,18 @@
   var loaded = false;
   var editingId = null;
   var addingSubtaskId = null;
+  var editingSubtaskKey = null;
   var activeFilter = 'All';
+  var viewMode = 'main';
   var COMPANIES = ['ESC', 'Hadeed', 'META'];
 
-  function todayStr() { return new Date().toISOString().slice(0,10); }
+  function todayStr() {
+    var d = new Date();
+    var y = d.getFullYear();
+    var m = String(d.getMonth() + 1).padStart(2, '0');
+    var day = String(d.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + day;
+  }
   function fmtDateHeader() {
     return new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
   }
@@ -222,7 +256,7 @@
     if (diffDays === 0) return 'Today';
     if (diffDays === 1) return 'Tomorrow';
     if (diffDays === -1) return 'Yesterday';
-    if (diffDays < 0) return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + ' (overdue)';
+    if (diffDays < 0) return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
     return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
   }
   function companyOptionsHtml(selected) {
@@ -289,65 +323,116 @@
     });
   }
 
-  function saveTasks() {
+  function commit(applyFn) {
+    // Optimistic local update first, so the UI feels instant.
+    tasks = applyFn(tasks);
+    render();
+    // Then reconcile against whatever is currently on the server (in case another
+    // device/tab changed things since we last loaded) before writing back.
     setStatus('Saving…');
-    apiSave(tasks).then(function() {
+    apiLoad().then(function(remote) {
+      if (!Array.isArray(remote)) remote = [];
+      var merged = applyFn(remote);
+      tasks = merged;
+      return apiSave(merged);
+    }).then(function() {
       setStatus('Saved', 'ok');
       setTimeout(function() { setStatus(''); }, 1200);
+      render();
     }).catch(function() {
-      setStatus('Save failed — check your connection.', 'err');
+      setStatus('Save failed — check your connection. Your change is kept on this device for now.', 'err');
     });
   }
 
   function addTask(text, date, time, company) {
     text = text.trim();
     if (!text) return;
-    tasks.push({ id: uid(), text: text, date: date || null, time: time || null, company: company || null, done: false, created: Date.now() });
-    saveTasks();
-    render();
+    var newTask = { id: uid(), text: text, date: date || null, time: time || null, company: company || null, done: false, created: Date.now(), subtasks: [] };
+    commit(function(list) { return list.concat([newTask]); });
   }
   function toggleTask(id) {
-    var t = tasks.filter(function(x){ return x.id === id; })[0];
-    if (t) { t.done = !t.done; saveTasks(); render(); }
+    commit(function(list) {
+      return list.map(function(t) {
+        if (t.id !== id) return t;
+        var copy = Object.assign({}, t);
+        copy.done = !copy.done;
+        copy.completedDate = copy.done ? todayStr() : null;
+        return copy;
+      });
+    });
   }
   function deleteTask(id) {
-    tasks = tasks.filter(function(x){ return x.id !== id; });
-    saveTasks();
-    render();
+    commit(function(list) { return list.filter(function(x) { return x.id !== id; }); });
   }
   function addSubtask(taskId, text) {
     text = text.trim();
     if (!text) return;
-    var t = tasks.filter(function(x){ return x.id === taskId; })[0];
-    if (!t) return;
-    if (!t.subtasks) t.subtasks = [];
-    t.subtasks.push({ id: uid(), text: text, done: false });
-    saveTasks();
-    render();
+    var newSub = { id: uid(), text: text, done: false };
+    commit(function(list) {
+      return list.map(function(t) {
+        if (t.id !== taskId) return t;
+        var copy = Object.assign({}, t);
+        copy.subtasks = (copy.subtasks || []).concat([newSub]);
+        return copy;
+      });
+    });
   }
   function toggleSubtask(taskId, subId) {
-    var t = tasks.filter(function(x){ return x.id === taskId; })[0];
-    if (!t || !t.subtasks) return;
-    var s = t.subtasks.filter(function(x){ return x.id === subId; })[0];
-    if (s) { s.done = !s.done; saveTasks(); render(); }
+    commit(function(list) {
+      return list.map(function(t) {
+        if (t.id !== taskId) return t;
+        var copy = Object.assign({}, t);
+        copy.subtasks = (copy.subtasks || []).map(function(s) {
+          if (s.id !== subId) return s;
+          var sc = Object.assign({}, s);
+          sc.done = !sc.done;
+          return sc;
+        });
+        return copy;
+      });
+    });
   }
   function deleteSubtask(taskId, subId) {
-    var t = tasks.filter(function(x){ return x.id === taskId; })[0];
-    if (!t || !t.subtasks) return;
-    t.subtasks = t.subtasks.filter(function(x){ return x.id !== subId; });
-    saveTasks();
-    render();
+    commit(function(list) {
+      return list.map(function(t) {
+        if (t.id !== taskId) return t;
+        var copy = Object.assign({}, t);
+        copy.subtasks = (copy.subtasks || []).filter(function(s) { return s.id !== subId; });
+        return copy;
+      });
+    });
+  }
+  function updateSubtaskText(taskId, subId, newText) {
+    newText = newText.trim();
+    editingSubtaskKey = null;
+    if (!newText) return;
+    commit(function(list) {
+      return list.map(function(t) {
+        if (t.id !== taskId) return t;
+        var copy = Object.assign({}, t);
+        copy.subtasks = (copy.subtasks || []).map(function(s) {
+          if (s.id !== subId) return s;
+          var sc = Object.assign({}, s);
+          sc.text = newText;
+          return sc;
+        });
+        return copy;
+      });
+    });
   }
   function updateTask(id, text, date, time, company) {
-    var t = tasks.filter(function(x){ return x.id === id; })[0];
-    if (!t) return;
-    t.text = text.trim() || t.text;
-    t.date = date || null;
-    t.time = time || null;
-    t.company = company || null;
     editingId = null;
-    saveTasks();
-    render();
+    commit(function(list) {
+      return list.map(function(t) {
+        if (t.id !== id) return t;
+        var copy = Object.assign({}, t);
+        copy.text = text.trim() || t.text;
+        copy.date = date || null;
+        copy.time = time || null;
+        copy.company = company || null;
+        return copy;
+      });
+    });
   }
 
   function editPanelHtml(t) {
@@ -366,10 +451,20 @@
   function subtasksHtml(t) {
     var subs = t.subtasks || [];
     var rows = subs.map(function(s) {
+      var key = t.id + '|' + s.id;
+      if (editingSubtaskKey === key) {
+        return '' +
+          '<div class="db-subrow db-subedit" data-subid="' + s.id + '">' +
+            '<input type="text" class="db-subedit-input" value="' + escapeHtml(s.text) + '" />' +
+            '<button class="db-subedit-save" data-action="sub-edit-save" title="Save">✓</button>' +
+            '<button class="db-subedit-cancel" data-action="sub-edit-cancel" title="Cancel">✕</button>' +
+          '</div>';
+      }
       return '' +
         '<div class="db-subrow ' + (s.done ? 'done' : '') + '" data-subid="' + s.id + '">' +
           '<button class="db-subcheck" data-action="sub-toggle">' + (s.done ? '✓' : '') + '</button>' +
           '<div class="db-subtext">' + escapeHtml(s.text) + '</div>' +
+          '<button class="db-subedit-btn" data-action="sub-edit" title="Edit">✎</button>' +
           '<button class="db-subdel" data-action="sub-delete" title="Remove">✕</button>' +
         '</div>';
     }).join('');
@@ -413,6 +508,11 @@
       root.innerHTML = '<div class="db-wrap"><p class="db-empty">Opening the daybook…</p></div>';
       return;
     }
+    if (viewMode === 'history') { renderHistory(); return; }
+    renderMain();
+  }
+
+  function renderMain() {
     var today = todayStr();
     var visible = tasks.filter(function(t) {
       if (activeFilter === 'All') return true;
@@ -422,46 +522,64 @@
     var scheduledTasks = visible.filter(function(t){ return t.date; });
     var inbox = visible.filter(function(t){ return !t.date; }).sort(function(a,b){ return a.created - b.created; });
 
-    // group scheduled by date, sorted chronologically; each group sorted by time then created
-    var groups = {};
-    scheduledTasks.forEach(function(t) {
-      if (!groups[t.date]) groups[t.date] = [];
-      groups[t.date].push(t);
-    });
-    var dateKeys = Object.keys(groups).sort();
-    dateKeys.forEach(function(k) {
-      groups[k].sort(function(a,b) {
+    function sortGroup(list) {
+      return list.slice().sort(function(a,b) {
         if (a.time && b.time) return a.time.localeCompare(b.time);
         if (a.time) return -1;
         if (b.time) return 1;
         return a.created - b.created;
       });
-    });
+    }
 
-    var scheduledHtml = '';
-    if (dateKeys.length === 0) {
-      scheduledHtml = '<p class="db-empty">Nothing scheduled yet.</p>';
-    } else {
-      dateKeys.forEach(function(k) {
-        scheduledHtml += '<div class="db-group-label">' + fmtGroupDate(k) + '</div>';
-        scheduledHtml += '<div class="db-timeline">' +
-          groups[k].map(function(t){ return rowHtml(t, true, true); }).join('') +
+    // group scheduled tasks by date
+    var groups = {};
+    scheduledTasks.forEach(function(t) {
+      if (!groups[t.date]) groups[t.date] = [];
+      groups[t.date].push(t);
+    });
+    var pastKeys = Object.keys(groups).filter(function(k){ return k < today; }).sort();
+    var futureKeys = Object.keys(groups).filter(function(k){ return k > today; }).sort();
+    var todayList = groups[today] || [];
+
+    function groupBlockHtml(keys, groupsObj, filterFn) {
+      var html = '';
+      keys.forEach(function(k) {
+        var list = filterFn ? groupsObj[k].filter(filterFn) : groupsObj[k];
+        if (!list.length) return;
+        html += '<div class="db-group-label">' + fmtGroupDate(k) + '</div>';
+        html += '<div class="db-timeline">' +
+          sortGroup(list).map(function(t){ return rowHtml(t, true, true); }).join('') +
         '</div>';
       });
+      return html;
     }
+
+    var overdueHtml = groupBlockHtml(pastKeys, groups, function(t){ return !t.done; });
+    var todayHtml = todayList.length
+      ? '<div class="db-timeline">' + sortGroup(todayList).map(function(t){ return rowHtml(t, true, true); }).join('') + '</div>'
+      : '<p class="db-empty">Nothing scheduled for today.</p>';
+    var upcomingHtml = groupBlockHtml(futureKeys, groups, null);
+    if (!upcomingHtml) upcomingHtml = '<p class="db-empty">Nothing coming up.</p>';
 
     var inboxHtml = inbox.length
       ? inbox.map(function(t){ return rowHtml(t, false, false); }).join('')
       : '<p class="db-empty">Inbox is clear.</p>';
 
-    var doneToday = tasks.filter(function(t){ return t.date === today && t.done; }).length;
-    var totalToday = tasks.filter(function(t){ return t.date === today; }).length;
+    var doneToday = todayList.filter(function(t){ return t.done; }).length;
+    var totalToday = todayList.length;
+
+    var overdueSection = overdueHtml
+      ? '<div class="db-section-label">Overdue — needs rescheduling</div>' + overdueHtml
+      : '';
 
     root.innerHTML =
       '<div class="db-wrap">' +
         '<div class="db-header">' +
           '<h1 class="db-title">Daybook</h1>' +
-          '<div class="db-date">' + fmtDateHeader() + '</div>' +
+          '<div class="db-header-right">' +
+            '<div class="db-date">' + fmtDateHeader() + '</div>' +
+            '<button class="db-history-link" data-action="show-history">Completed history</button>' +
+          '</div>' +
         '</div>' +
         '<div class="db-status"></div>' +
         '<form class="db-add" id="db-add-form">' +
@@ -476,8 +594,11 @@
             return '<button class="db-filter-btn' + (activeFilter === f ? ' active' : '') + '" data-filter="' + f + '">' + f + '</button>';
           }).join('') +
         '</div>' +
-        '<div class="db-section-label">Scheduled</div>' +
-        scheduledHtml +
+        overdueSection +
+        '<div class="db-section-label">Today</div>' +
+        todayHtml +
+        '<div class="db-section-label">Upcoming</div>' +
+        upcomingHtml +
         '<div class="db-section-label">Inbox — no date assigned</div>' +
         inboxHtml +
         '<div class="db-footer">' + doneToday + ' of ' + totalToday + ' done today</div>' +
@@ -499,7 +620,14 @@
         render();
       });
     });
+    root.querySelectorAll('[data-action="show-history"]').forEach(function(btn) {
+      btn.addEventListener('click', function() { viewMode = 'history'; render(); });
+    });
 
+    attachRowListeners();
+  }
+
+  function attachRowListeners() {
     root.querySelectorAll('[data-action="toggle"]').forEach(function(btn) {
       btn.addEventListener('click', function() { toggleTask(btn.closest('.db-row').dataset.id); });
     });
@@ -555,6 +683,38 @@
         deleteSubtask(container.dataset.taskId, subrow.dataset.subid);
       });
     });
+    root.querySelectorAll('[data-action="sub-edit"]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var subrow = btn.closest('.db-subrow');
+        var container = btn.closest('.db-subtasks');
+        editingSubtaskKey = container.dataset.taskId + '|' + subrow.dataset.subid;
+        render();
+      });
+    });
+    root.querySelectorAll('[data-action="sub-edit-cancel"]').forEach(function(btn) {
+      btn.addEventListener('click', function() { editingSubtaskKey = null; render(); });
+    });
+    root.querySelectorAll('.db-subedit-input').forEach(function(input) {
+      input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          var subrow = input.closest('.db-subrow');
+          var container = input.closest('.db-subtasks');
+          updateSubtaskText(container.dataset.taskId, subrow.dataset.subid, input.value);
+        } else if (e.key === 'Escape') {
+          editingSubtaskKey = null;
+          render();
+        }
+      });
+    });
+    root.querySelectorAll('[data-action="sub-edit-save"]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var subrow = btn.closest('.db-subrow');
+        var container = btn.closest('.db-subtasks');
+        var input = subrow.querySelector('.db-subedit-input');
+        updateSubtaskText(container.dataset.taskId, subrow.dataset.subid, input.value);
+      });
+    });
     root.querySelectorAll('[data-action="sub-add-form"]').forEach(function(form) {
       form.addEventListener('submit', function(e) {
         e.preventDefault();
@@ -563,6 +723,64 @@
         addSubtask(container.dataset.taskId, input.value);
       });
     });
+  }
+
+  function renderHistory() {
+    var visible = tasks.filter(function(t) {
+      if (!t.done) return false;
+      if (activeFilter === 'All') return true;
+      if (activeFilter === 'General') return !t.company;
+      return t.company === activeFilter;
+    });
+
+    var groups = {};
+    visible.forEach(function(t) {
+      var key = t.completedDate || t.date || 'unknown';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(t);
+    });
+    var dateKeys = Object.keys(groups).sort().reverse();
+
+    var historyHtml = '';
+    if (!dateKeys.length) {
+      historyHtml = '<p class="db-empty">No completed tasks yet.</p>';
+    } else {
+      dateKeys.forEach(function(k) {
+        var label = k === 'unknown' ? 'Unknown date' : fmtGroupDate(k);
+        historyHtml += '<div class="db-group-label">' + label + '</div>';
+        historyHtml += '<div class="db-timeline">' +
+          groups[k].map(function(t){ return rowHtml(t, !!t.time, true); }).join('') +
+        '</div>';
+      });
+    }
+
+    root.innerHTML =
+      '<div class="db-wrap">' +
+        '<div class="db-header">' +
+          '<h1 class="db-title">Completed history</h1>' +
+          '<div class="db-date">' + fmtDateHeader() + '</div>' +
+        '</div>' +
+        '<div class="db-status"></div>' +
+        '<button class="db-back-link" data-action="back-to-main">← Back to tasks</button>' +
+        '<div class="db-filters">' +
+          ['All', 'General'].concat(COMPANIES).map(function(f) {
+            return '<button class="db-filter-btn' + (activeFilter === f ? ' active' : '') + '" data-filter="' + f + '">' + f + '</button>';
+          }).join('') +
+        '</div>' +
+        historyHtml +
+      '</div>';
+
+    root.querySelectorAll('[data-filter]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        activeFilter = btn.dataset.filter;
+        render();
+      });
+    });
+    root.querySelectorAll('[data-action="back-to-main"]').forEach(function(btn) {
+      btn.addEventListener('click', function() { viewMode = 'main'; render(); });
+    });
+
+    attachRowListeners();
   }
 
   loadTasks();
